@@ -1,12 +1,18 @@
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { v4 as uuidv4 } from "uuid";
 import { Button } from "@/components/ui/button";
-import { PlusCircle, Users, Receipt, DollarSign, Calculator } from "lucide-react";
+import { PlusCircle, Users, Receipt, DollarSign, Calculator, Save, CreditCard } from "lucide-react";
 import BillItem, { User } from "./BillItem";
 import UserProfile from "./UserProfile";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
+import { useCurrency } from "@/hooks/useCurrency";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/context/AuthContext";
+import { useNavigate } from "react-router-dom";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 interface BillItem {
   id: string;
@@ -14,13 +20,14 @@ interface BillItem {
   price: number;
   quantity: number;
   assignedUsers: User[];
+  paidBy?: User;
 }
 
 const BillCreator: React.FC = () => {
+  const { user } = useAuth();
+  const navigate = useNavigate();
   const [title, setTitle] = useState("Dinner");
-  const [users, setUsers] = useState<User[]>([
-    { id: uuidv4(), name: "You" }
-  ]);
+  const [users, setUsers] = useState<User[]>([]);
   const [items, setItems] = useState<BillItem[]>([]);
   const [newItemName, setNewItemName] = useState("");
   const [newItemPrice, setNewItemPrice] = useState("");
@@ -28,7 +35,38 @@ const BillCreator: React.FC = () => {
   const [newUserName, setNewUserName] = useState("");
   const [isAddingUser, setIsAddingUser] = useState(false);
   const [isCalculating, setIsCalculating] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [payments, setPayments] = useState<{from: User, to: User, amount: number}[]>([]);
+  const [showAuthPrompt, setShowAuthPrompt] = useState(false);
+  
+  // Currency handling
+  const { 
+    currencies, 
+    selectedCurrency, 
+    setSelectedCurrency, 
+    formatAmount, 
+    getCurrentCurrency 
+  } = useCurrency();
+
+  // Initialize with the current user if logged in
+  useEffect(() => {
+    if (user) {
+      const currentUser: User = {
+        id: user.id,
+        name: user.email?.split('@')[0] || "You"
+      };
+      
+      // Only add current user if not already in the list
+      if (!users.some(u => u.id === user.id)) {
+        setUsers([currentUser]);
+      }
+    } else {
+      // If not logged in, add a default "You" user
+      if (users.length === 0) {
+        setUsers([{ id: uuidv4(), name: "You" }]);
+      }
+    }
+  }, [user]);
 
   const handleAddItem = (e: React.FormEvent) => {
     e.preventDefault();
@@ -134,6 +172,30 @@ const BillCreator: React.FC = () => {
     );
   };
 
+  const handleSetPaidBy = (itemId: string, userId: string | null) => {
+    setItems(
+      items.map((item) => {
+        if (item.id === itemId) {
+          if (!userId) {
+            // Remove paidBy
+            const { paidBy, ...rest } = item;
+            return rest;
+          } else {
+            // Set paidBy
+            const userToSet = users.find((user) => user.id === userId);
+            if (userToSet) {
+              return {
+                ...item,
+                paidBy: userToSet,
+              };
+            }
+          }
+        }
+        return item;
+      })
+    );
+  };
+
   const calculateBill = () => {
     setIsCalculating(true);
     
@@ -145,10 +207,16 @@ const BillCreator: React.FC = () => {
       userBalances[user.id] = 0;
     });
     
-    // Calculate what each person owes
+    // Calculate what each person owes and who paid
     items.forEach(item => {
       const totalItemCost = item.price * item.quantity;
       
+      // If someone paid for this item, credit them
+      if (item.paidBy) {
+        userBalances[item.paidBy.id] += totalItemCost;
+      }
+      
+      // Debit the assigned users or everyone if none assigned
       if (item.assignedUsers.length === 0) {
         // If no users assigned, split among all users
         const costPerPerson = totalItemCost / users.length;
@@ -208,6 +276,128 @@ const BillCreator: React.FC = () => {
     setPayments(payments);
   };
 
+  const handleSaveBill = async () => {
+    if (!user) {
+      setShowAuthPrompt(true);
+      return;
+    }
+
+    if (items.length === 0) {
+      toast.error("Please add at least one item to the bill");
+      return;
+    }
+
+    setIsSaving(true);
+
+    try {
+      // Create the bill
+      const { data: billData, error: billError } = await supabase
+        .from('bills')
+        .insert({
+          title,
+          created_by: user.id,
+          total_amount: totalAmount,
+          currency: selectedCurrency
+        })
+        .select()
+        .single();
+
+      if (billError) throw billError;
+
+      const billId = billData.id;
+
+      // Add participants
+      const participantsPromises = users.map(async (u) => {
+        const { data, error } = await supabase
+          .from('bill_participants')
+          .insert({
+            bill_id: billId,
+            user_id: u.id === user.id ? user.id : user.id, // Only the current user is a registered user
+            name: u.name,
+            is_registered: u.id === user.id
+          })
+          .select()
+          .single();
+
+        if (error) throw error;
+        return { ...u, participant_id: data.id };
+      });
+
+      const participants = await Promise.all(participantsPromises);
+
+      // Add items and their assignments
+      for (const item of items) {
+        // Insert bill item
+        const { data: itemData, error: itemError } = await supabase
+          .from('bill_items')
+          .insert({
+            bill_id: billId,
+            name: item.name,
+            price: item.price,
+            quantity: item.quantity,
+            paid_by: item.paidBy ? participants.find(p => p.id === item.paidBy!.id)?.participant_id : null
+          })
+          .select()
+          .single();
+
+        if (itemError) throw itemError;
+
+        // Insert item assignments
+        if (item.assignedUsers.length > 0) {
+          const assignments = item.assignedUsers.map(assignedUser => {
+            const participant = participants.find(p => p.id === assignedUser.id);
+            return {
+              bill_item_id: itemData.id,
+              participant_id: participant!.participant_id
+            };
+          });
+
+          const { error: assignError } = await supabase
+            .from('item_assignments')
+            .insert(assignments);
+
+          if (assignError) throw assignError;
+        }
+      }
+
+      // Add payments if they exist
+      if (payments.length > 0) {
+        const paymentsToInsert = payments.map(payment => {
+          const fromParticipant = participants.find(p => p.id === payment.from.id);
+          const toParticipant = participants.find(p => p.id === payment.to.id);
+          
+          return {
+            bill_id: billId,
+            from_user_id: fromParticipant!.participant_id,
+            to_user_id: toParticipant!.participant_id,
+            amount: payment.amount,
+            currency: selectedCurrency,
+            status: 'pending'
+          };
+        });
+
+        const { error: paymentsError } = await supabase
+          .from('payments')
+          .insert(paymentsToInsert);
+
+        if (paymentsError) throw paymentsError;
+      }
+
+      toast.success("Bill saved successfully!");
+      
+      // Reset the form after successful save
+      setItems([]);
+      setPayments([]);
+      setIsCalculating(false);
+      
+    } catch (error: any) {
+      console.error("Error saving bill:", error);
+      toast.error("Failed to save bill: " + error.message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const totalAmount = items.reduce(
     (sum, item) => sum + item.price * item.quantity,
     0
@@ -222,21 +412,43 @@ const BillCreator: React.FC = () => {
               <Receipt className="w-5 h-5 mr-2 text-primary" />
               <h2 className="text-xl font-semibold">Bill Details</h2>
             </div>
-            <div className="text-xl font-bold">${totalAmount.toFixed(2)}</div>
+            <div className="text-xl font-bold">{formatAmount(totalAmount)}</div>
           </div>
           
-          <div className="mb-4">
-            <label htmlFor="bill-title" className="text-sm text-muted-foreground">
-              Bill Name
-            </label>
-            <input
-              id="bill-title"
-              type="text"
-              className="input-field w-full"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Enter a name for this bill"
-            />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="bill-title" className="text-sm text-muted-foreground">
+                Bill Name
+              </label>
+              <input
+                id="bill-title"
+                type="text"
+                className="input-field w-full"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Enter a name for this bill"
+              />
+            </div>
+            <div>
+              <label htmlFor="currency" className="text-sm text-muted-foreground">
+                Currency
+              </label>
+              <Select 
+                value={selectedCurrency} 
+                onValueChange={setSelectedCurrency}
+              >
+                <SelectTrigger id="currency" className="w-full">
+                  <SelectValue placeholder="Select currency" />
+                </SelectTrigger>
+                <SelectContent>
+                  {currencies.map(currency => (
+                    <SelectItem key={currency.code} value={currency.code}>
+                      {currency.code} - {currency.symbol}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </div>
 
@@ -357,10 +569,13 @@ const BillCreator: React.FC = () => {
                 price={item.price}
                 quantity={item.quantity}
                 assignedUsers={item.assignedUsers}
+                paidBy={item.paidBy}
                 allUsers={users}
                 onUserToggle={handleUserToggle}
                 onDelete={handleDeleteItem}
                 onUpdate={handleUpdateItem}
+                onSetPaidBy={handleSetPaidBy}
+                currencySymbol={getCurrentCurrency().symbol}
               />
             ))}
           </AnimatePresence>
@@ -374,7 +589,7 @@ const BillCreator: React.FC = () => {
         </div>
       </div>
 
-      <div className="sticky bottom-6 flex justify-center">
+      <div className="sticky bottom-6 flex justify-center space-x-3">
         <Button 
           size="lg" 
           className="shadow-lg"
@@ -383,6 +598,17 @@ const BillCreator: React.FC = () => {
         >
           <Calculator className="w-5 h-5 mr-2" />
           Calculate Split
+        </Button>
+
+        <Button 
+          size="lg" 
+          variant="outline"
+          className="shadow-lg"
+          disabled={items.length === 0}
+          onClick={handleSaveBill}
+        >
+          <Save className="w-5 h-5 mr-2" />
+          Save Bill
         </Button>
       </div>
 
@@ -405,7 +631,7 @@ const BillCreator: React.FC = () => {
               <div className="text-center mb-6">
                 <h2 className="text-2xl font-bold mb-2">{title}</h2>
                 <p className="text-muted-foreground">
-                  Total: ${totalAmount.toFixed(2)}
+                  Total: {formatAmount(totalAmount)}
                 </p>
               </div>
 
@@ -422,7 +648,7 @@ const BillCreator: React.FC = () => {
                       </div>
                       <div className="flex items-center text-sm">
                         <span className="mr-2">pays</span>
-                        <span className="font-semibold">${payment.amount.toFixed(2)}</span>
+                        <span className="font-semibold">{formatAmount(payment.amount)}</span>
                       </div>
                       <div className="flex items-center">
                         <span className="mr-2">to</span>
@@ -452,6 +678,29 @@ const BillCreator: React.FC = () => {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Auth prompt dialog */}
+      <Dialog open={showAuthPrompt} onOpenChange={setShowAuthPrompt}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Sign in to save your bill</DialogTitle>
+            <DialogDescription>
+              You need to be signed in to save bills and access them later.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end space-x-2 mt-4">
+            <Button variant="outline" onClick={() => setShowAuthPrompt(false)}>
+              Cancel
+            </Button>
+            <Button onClick={() => {
+              setShowAuthPrompt(false);
+              navigate("/auth");
+            }}>
+              Sign In
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

@@ -1,98 +1,196 @@
 
-import React from "react";
+import React, { useState, useEffect } from "react";
+import { useAuth } from "@/context/AuthContext";
+import { useNavigate } from "react-router-dom";
 import AppLayout from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
-import { User, History, Settings } from "lucide-react";
-import { motion } from "framer-motion";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
+import PaymentMethodForm from "@/components/profile/PaymentMethodForm";
+import PaymentMethodsList from "@/components/profile/PaymentMethodsList";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const Profile = () => {
+  const { user, profile, signOut } = useAuth();
+  const navigate = useNavigate();
+  const [currencies, setCurrencies] = useState<any[]>([]);
+  const [username, setUsername] = useState("");
+  const [preferredCurrency, setPreferredCurrency] = useState("USD");
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!user) {
+      navigate("/auth");
+      return;
+    }
+
+    // Set initial form values if profile is loaded
+    if (profile) {
+      setUsername(profile.username || "");
+      setPreferredCurrency(profile.preferred_currency || "USD");
+    }
+
+    // Fetch available currencies
+    const fetchCurrencies = async () => {
+      try {
+        const { data, error } = await supabase.rpc('get_currencies');
+        if (error) throw error;
+        setCurrencies(data || []);
+      } catch (error: any) {
+        console.error("Error fetching currencies:", error.message);
+        toast.error("Failed to load currencies");
+      }
+    };
+
+    fetchCurrencies();
+  }, [user, profile, navigate]);
+
+  const handleUpdateProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .update({
+          username,
+          preferred_currency: preferredCurrency,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', user.id)
+        .select();
+
+      if (error) throw error;
+      toast.success("Profile updated successfully");
+    } catch (error: any) {
+      console.error("Error updating profile:", error.message);
+      toast.error("Failed to update profile");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    try {
+      await signOut();
+      navigate("/auth");
+    } catch (error) {
+      console.error("Error signing out:", error);
+    }
+  };
+
+  if (!user) return null;
+
   return (
     <AppLayout>
       <div className="mb-6">
-        <h1 className="page-header">Profile</h1>
+        <h1 className="page-header">Your Profile</h1>
+        <p className="text-muted-foreground">Manage your account settings and payment methods</p>
       </div>
 
-      <div className="max-w-2xl mx-auto">
-        <motion.div 
-          className="glass-card p-6 mb-6"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3 }}
-        >
-          <div className="flex items-center space-x-4">
-            <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
-              <User className="w-8 h-8 text-primary" />
-            </div>
-            <div>
-              <h2 className="text-xl font-semibold">You</h2>
-              <p className="text-muted-foreground">Your profile</p>
-            </div>
-          </div>
-        </motion.div>
-
-        <motion.div 
-          className="glass-card p-6 mb-6"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1, duration: 0.3 }}
-        >
-          <div className="flex items-center mb-4">
-            <History className="w-5 h-5 mr-2 text-primary" />
-            <h2 className="text-xl font-semibold">Recent Activity</h2>
-          </div>
+      <div className="space-y-6">
+        <Tabs defaultValue="profile" className="w-full">
+          <TabsList className="mb-6">
+            <TabsTrigger value="profile">Profile</TabsTrigger>
+            <TabsTrigger value="payment">Payment Methods</TabsTrigger>
+          </TabsList>
           
-          <div className="py-8 text-center text-muted-foreground">
-            <History className="w-12 h-12 mx-auto mb-3 opacity-30" />
-            <p>You don't have any recent activity</p>
-            <Button variant="outline" className="mt-4" asChild>
-              <a href="/new-bill">Create your first bill</a>
-            </Button>
-          </div>
-        </motion.div>
-
-        <motion.div 
-          className="glass-card p-6"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2, duration: 0.3 }}
-        >
-          <div className="flex items-center mb-4">
-            <Settings className="w-5 h-5 mr-2 text-primary" />
-            <h2 className="text-xl font-semibold">Settings</h2>
-          </div>
+          <TabsContent value="profile">
+            <Card>
+              <CardHeader>
+                <CardTitle>Profile Information</CardTitle>
+                <CardDescription>
+                  Update your personal information and preferences
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <form onSubmit={handleUpdateProfile} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="email">Email</Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      value={user.email || ""}
+                      disabled
+                    />
+                    <p className="text-xs text-muted-foreground">Your email cannot be changed</p>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="username">Username</Label>
+                    <Input
+                      id="username"
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      placeholder="Enter a username"
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="currency">Preferred Currency</Label>
+                    <Select
+                      value={preferredCurrency}
+                      onValueChange={setPreferredCurrency}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a currency" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {currencies.map((currency) => (
+                          <SelectItem key={currency.code} value={currency.code}>
+                            {currency.code} - {currency.name} ({currency.symbol})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  <Button type="submit" disabled={isLoading}>
+                    {isLoading ? "Saving..." : "Save Changes"}
+                  </Button>
+                </form>
+              </CardContent>
+            </Card>
+            
+            <div className="mt-6">
+              <Button variant="destructive" onClick={handleSignOut}>
+                Sign Out
+              </Button>
+            </div>
+          </TabsContent>
           
-          <div className="space-y-4">
-            <div className="flex items-center justify-between p-3 hover:bg-muted/50 rounded-lg transition-colors cursor-pointer">
-              <div>
-                <h3 className="font-medium">Appearance</h3>
-                <p className="text-sm text-muted-foreground">Change theme preferences</p>
-              </div>
-              <Button variant="ghost" size="sm">
-                Edit
-              </Button>
-            </div>
+          <TabsContent value="payment">
+            <Card className="mb-6">
+              <CardHeader>
+                <CardTitle>Your Payment Methods</CardTitle>
+                <CardDescription>
+                  Manage how others can pay you when splitting bills
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <PaymentMethodsList />
+              </CardContent>
+            </Card>
             
-            <div className="flex items-center justify-between p-3 hover:bg-muted/50 rounded-lg transition-colors cursor-pointer">
-              <div>
-                <h3 className="font-medium">Notifications</h3>
-                <p className="text-sm text-muted-foreground">Configure notification settings</p>
-              </div>
-              <Button variant="ghost" size="sm">
-                Edit
-              </Button>
-            </div>
-            
-            <div className="flex items-center justify-between p-3 hover:bg-muted/50 rounded-lg transition-colors cursor-pointer">
-              <div>
-                <h3 className="font-medium">Privacy</h3>
-                <p className="text-sm text-muted-foreground">Manage your privacy settings</p>
-              </div>
-              <Button variant="ghost" size="sm">
-                Edit
-              </Button>
-            </div>
-          </div>
-        </motion.div>
+            <Card>
+              <CardHeader>
+                <CardTitle>Add Payment Method</CardTitle>
+                <CardDescription>
+                  Add a new way for friends to pay you
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <PaymentMethodForm />
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </div>
     </AppLayout>
   );

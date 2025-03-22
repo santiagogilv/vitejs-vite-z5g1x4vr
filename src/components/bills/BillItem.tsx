@@ -1,9 +1,10 @@
 
 import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Trash2, ChevronRight, ChevronDown, Users } from "lucide-react";
+import { Trash2, ChevronRight, ChevronDown, Users, DollarSign } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import UserProfile from "./UserProfile";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export interface User {
   id: string;
@@ -16,10 +17,13 @@ export interface BillItemProps {
   price: number;
   quantity: number;
   assignedUsers: User[];
+  paidBy?: User;
   allUsers: User[];
+  currencySymbol?: string;
   onUserToggle: (itemId: string, userId: string) => void;
   onDelete: (id: string) => void;
   onUpdate: (id: string, data: { name?: string; price?: number; quantity?: number }) => void;
+  onSetPaidBy: (itemId: string, userId: string | null) => void;
 }
 
 const BillItem: React.FC<BillItemProps> = ({
@@ -28,10 +32,13 @@ const BillItem: React.FC<BillItemProps> = ({
   price,
   quantity,
   assignedUsers,
+  paidBy,
   allUsers,
+  currencySymbol = "$",
   onUserToggle,
   onDelete,
   onUpdate,
+  onSetPaidBy,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -134,11 +141,11 @@ const BillItem: React.FC<BillItemProps> = ({
                 </div>
               </div>
               <p className="text-muted-foreground text-sm">
-                ${price.toFixed(2)} {quantity > 1 ? `each` : ""}
+                {currencySymbol}{price.toFixed(2)} {quantity > 1 ? `each` : ""}
               </p>
             </div>
             <div className="text-right">
-              <p className="font-semibold">${totalPrice.toFixed(2)}</p>
+              <p className="font-semibold">{currencySymbol}{totalPrice.toFixed(2)}</p>
               <p className="text-xs text-muted-foreground flex items-center justify-end">
                 <Users className="w-3 h-3 mr-1" />
                 {assignedUsers.length || "Not assigned"}
@@ -192,13 +199,42 @@ const BillItem: React.FC<BillItemProps> = ({
                 transition={{ duration: 0.3 }}
                 className="mt-3 pt-3 border-t border-border"
               >
+                <div className="mb-4">
+                  <label htmlFor={`paid-by-${id}`} className="text-sm font-medium">
+                    <DollarSign className="w-4 h-4 inline-block mr-1" /> Paid by
+                  </label>
+                  <Select
+                    value={paidBy?.id || ""}
+                    onValueChange={(value) => onSetPaidBy(id, value || null)}
+                  >
+                    <SelectTrigger id={`paid-by-${id}`} className="mt-1">
+                      <SelectValue placeholder="Who paid for this item?" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">Not specified</SelectItem>
+                      {allUsers.map((user) => (
+                        <SelectItem key={user.id} value={user.id}>
+                          {user.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 {assignedUsers.length > 0 && (
                   <div className="mb-2">
                     <p className="text-xs text-muted-foreground mb-1">
-                      ${pricePerPerson.toFixed(2)} per person
+                      {currencySymbol}{pricePerPerson.toFixed(2)} per person
                     </p>
                   </div>
                 )}
+                
+                <div className="mb-2">
+                  <label className="text-sm font-medium">
+                    <Users className="w-4 h-4 inline-block mr-1" /> Assigned to
+                  </label>
+                </div>
+                
                 <div className="overflow-x-auto -mx-4 px-4">
                   <div className="flex space-x-2 pb-2">
                     {allUsers.map((user) => {

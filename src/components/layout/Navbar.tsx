@@ -1,117 +1,95 @@
 
-import { useState, useEffect } from "react";
+// This is an update for Navbar.tsx to add authentication-related links
+import React from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import ThemeToggle from "@/components/ui/ThemeToggle";
-import { Menu, X, Receipt, User, PlusCircle } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+import { PlusCircle, Receipt, User } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { useAuth } from "@/context/AuthContext";
 
-const Navbar = () => {
-  const [isOpen, setIsOpen] = useState(false);
-  const location = useLocation();
-  
-  // Close mobile menu when route changes
-  useEffect(() => {
-    setIsOpen(false);
-  }, [location.pathname]);
+interface NavbarProps {
+  isMobile: boolean;
+  isExpanded: boolean;
+  toggleNav: () => void;
+}
 
-  // Close mobile menu when window is resized to desktop
-  useEffect(() => {
-    const handleResize = () => {
-      if (window.innerWidth >= 768) {
-        setIsOpen(false);
-      }
-    };
+const Navbar: React.FC<NavbarProps> = ({ isMobile, isExpanded, toggleNav }) => {
+  const { pathname } = useLocation();
+  const { user } = useAuth();
 
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
-
-  const navItems = [
-    { name: "Home", path: "/", icon: <Receipt className="w-5 h-5 mr-2" /> },
-    { name: "New Bill", path: "/new-bill", icon: <PlusCircle className="w-5 h-5 mr-2" /> },
-    { name: "Profile", path: "/profile", icon: <User className="w-5 h-5 mr-2" /> },
-  ];
+  const NavLink = ({
+    to,
+    children,
+    icon,
+  }: {
+    to: string;
+    children: React.ReactNode;
+    icon: React.ReactNode;
+  }) => {
+    const isActive = pathname === to;
+    return (
+      <Link
+        to={to}
+        className={cn(
+          "flex items-center gap-3 py-2 px-3 rounded-md transition-colors",
+          isActive
+            ? "bg-primary text-primary-foreground"
+            : "hover:bg-muted"
+        )}
+        onClick={() => isMobile && isExpanded && toggleNav()}
+      >
+        {icon}
+        <span className={cn(isMobile ? "block" : isExpanded ? "block" : "hidden")}>
+          {children}
+        </span>
+      </Link>
+    );
+  };
 
   return (
-    <header className="sticky top-0 z-50 glass-card backdrop-blur-lg bg-background/80 border-b border-border/50 shadow-sm">
-      <div className="page-container">
-        <div className="flex items-center justify-between h-16">
-          {/* Logo */}
-          <Link to="/" className="flex items-center space-x-2">
-            <motion.div
-              whileHover={{ rotate: 10 }}
-              className="flex items-center justify-center w-10 h-10 rounded-lg bg-primary/10 text-primary"
-            >
-              <Receipt className="w-6 h-6" />
-            </motion.div>
-            <span className="text-xl font-semibold tracking-tight">DineShare</span>
-          </Link>
-
-          {/* Desktop Navigation */}
-          <nav className="hidden md:flex items-center space-x-1">
-            {navItems.map((item) => (
-              <Button
-                key={item.path}
-                variant={location.pathname === item.path ? "secondary" : "ghost"}
-                asChild
-                className="gap-2"
-              >
-                <Link to={item.path}>
-                  {item.icon}
-                  {item.name}
-                </Link>
-              </Button>
-            ))}
-            <div className="mx-2">
-              <ThemeToggle />
-            </div>
-          </nav>
-
-          {/* Mobile Menu Button */}
-          <div className="flex items-center md:hidden space-x-2">
-            <ThemeToggle />
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setIsOpen(!isOpen)}
-              aria-label="Toggle menu"
-            >
-              {isOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-            </Button>
-          </div>
-        </div>
+    <div className="h-full flex flex-col justify-between p-3">
+      <div className="space-y-2">
+        <NavLink to="/" icon={<Receipt className="w-5 h-5" />}>
+          Home
+        </NavLink>
+        
+        <NavLink to="/new-bill" icon={<PlusCircle className="w-5 h-5" />}>
+          New Bill
+        </NavLink>
+        
+        {user && (
+          <NavLink to="/bills" icon={<Receipt className="w-5 h-5" />}>
+            My Bills
+          </NavLink>
+        )}
       </div>
 
-      {/* Mobile Navigation */}
-      <AnimatePresence>
-        {isOpen && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="md:hidden overflow-hidden border-t border-border/50"
+      <div className="space-y-2">
+        {user ? (
+          <NavLink to="/profile" icon={<User className="w-5 h-5" />}>
+            Profile
+          </NavLink>
+        ) : (
+          <Link 
+            to="/auth" 
+            className="w-full" 
+            onClick={() => isMobile && isExpanded && toggleNav()}
           >
-            <div className="page-container py-4 space-y-1">
-              {navItems.map((item) => (
-                <Button
-                  key={item.path}
-                  variant={location.pathname === item.path ? "secondary" : "ghost"}
-                  asChild
-                  className="w-full justify-start gap-2"
-                >
-                  <Link to={item.path}>
-                    {item.icon}
-                    {item.name}
-                  </Link>
-                </Button>
-              ))}
-            </div>
-          </motion.div>
+            <Button className="w-full justify-start">
+              <User className="mr-2 h-4 w-4" />
+              <span className={cn(isMobile ? "block" : isExpanded ? "block" : "hidden")}>
+                Sign In
+              </span>
+            </Button>
+          </Link>
         )}
-      </AnimatePresence>
-    </header>
+        
+        <div className="flex items-center justify-center py-2">
+          <ThemeToggle />
+        </div>
+      </div>
+    </div>
   );
 };
 

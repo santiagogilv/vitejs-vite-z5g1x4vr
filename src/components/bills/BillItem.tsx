@@ -1,3 +1,4 @@
+
 import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Trash2, ChevronRight, ChevronDown, Users, DollarSign } from "lucide-react";
@@ -203,8 +204,8 @@ const BillItem: React.FC<BillItemProps> = ({
                     <DollarSign className="w-4 h-4 inline-block mr-1" /> Paid by
                   </label>
                   <Select
-                    value={paidBy?.id || ""}
-                    onValueChange={(value) => onSetPaidBy(id, value || null)}
+                    value={paidBy?.id || "none"}
+                    onValueChange={(value) => onSetPaidBy(id, value === "none" ? null : value)}
                   >
                     <SelectTrigger id={`paid-by-${id}`} className="mt-1">
                       <SelectValue placeholder="Who paid for this item?" />

@@ -7,18 +7,18 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import PaymentMethodForm from "@/components/profile/PaymentMethodForm";
 import PaymentMethodsList from "@/components/profile/PaymentMethodsList";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useCurrency } from "@/hooks/useCurrency";
 
 const Profile = () => {
   const { user, profile, signOut } = useAuth();
   const navigate = useNavigate();
-  const [currencies, setCurrencies] = useState<any[]>([]);
+  const { currencies, loading: currenciesLoading } = useCurrency();
   const [username, setUsername] = useState("");
   const [preferredCurrency, setPreferredCurrency] = useState("USD");
   const [isLoading, setIsLoading] = useState(false);
@@ -34,20 +34,6 @@ const Profile = () => {
       setUsername(profile.username || "");
       setPreferredCurrency(profile.preferred_currency || "USD");
     }
-
-    // Fetch available currencies
-    const fetchCurrencies = async () => {
-      try {
-        const { data, error } = await supabase.rpc('get_currencies');
-        if (error) throw error;
-        setCurrencies(data || []);
-      } catch (error: any) {
-        console.error("Error fetching currencies:", error.message);
-        toast.error("Failed to load currencies");
-      }
-    };
-
-    fetchCurrencies();
   }, [user, profile, navigate]);
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
@@ -138,15 +124,19 @@ const Profile = () => {
                       value={preferredCurrency}
                       onValueChange={setPreferredCurrency}
                     >
-                      <SelectTrigger>
+                      <SelectTrigger id="currency">
                         <SelectValue placeholder="Select a currency" />
                       </SelectTrigger>
                       <SelectContent>
-                        {currencies.map((currency) => (
-                          <SelectItem key={currency.code} value={currency.code}>
-                            {currency.code} - {currency.name} ({currency.symbol})
-                          </SelectItem>
-                        ))}
+                        {currenciesLoading ? (
+                          <SelectItem value="loading">Loading currencies...</SelectItem>
+                        ) : (
+                          currencies.map((currency) => (
+                            <SelectItem key={currency.code} value={currency.code}>
+                              {currency.code} - {currency.name} ({currency.symbol})
+                            </SelectItem>
+                          ))
+                        )}
                       </SelectContent>
                     </Select>
                   </div>

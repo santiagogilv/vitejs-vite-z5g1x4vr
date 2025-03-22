@@ -10,12 +10,23 @@ export interface Currency {
   decimal_places: number;
 }
 
+// Default currencies to use as fallback if API fails
+const DEFAULT_CURRENCIES: Currency[] = [
+  { code: "USD", name: "US Dollar", symbol: "$", decimal_places: 2 },
+  { code: "EUR", name: "Euro", symbol: "€", decimal_places: 2 },
+  { code: "GBP", name: "British Pound", symbol: "£", decimal_places: 2 },
+  { code: "JPY", name: "Japanese Yen", symbol: "¥", decimal_places: 0 },
+  { code: "CAD", name: "Canadian Dollar", symbol: "CA$", decimal_places: 2 },
+  { code: "AUD", name: "Australian Dollar", symbol: "A$", decimal_places: 2 },
+];
+
 export const useCurrency = (initialCurrency = "USD") => {
   const { profile } = useAuth();
-  const [currencies, setCurrencies] = useState<Currency[]>([]);
+  const [currencies, setCurrencies] = useState<Currency[]>(DEFAULT_CURRENCIES);
   const [selectedCurrency, setSelectedCurrency] = useState(initialCurrency);
   const [loading, setLoading] = useState(true);
 
+  // Load currencies from Supabase and set user's preferred currency
   useEffect(() => {
     // Use the user's preferred currency from their profile if available
     if (profile?.preferred_currency) {
@@ -25,10 +36,18 @@ export const useCurrency = (initialCurrency = "USD") => {
     const fetchCurrencies = async () => {
       try {
         const { data, error } = await supabase.rpc('get_currencies');
+        
         if (error) throw error;
-        setCurrencies(data || []);
+        
+        if (data && data.length > 0) {
+          setCurrencies(data);
+          console.log("Currencies loaded:", data.length);
+        } else {
+          console.log("No currencies returned from API, using defaults");
+        }
       } catch (error) {
         console.error("Error fetching currencies:", error);
+        // If there's an error, we already have DEFAULT_CURRENCIES as fallback
       } finally {
         setLoading(false);
       }
@@ -36,6 +55,27 @@ export const useCurrency = (initialCurrency = "USD") => {
 
     fetchCurrencies();
   }, [profile]);
+
+  // Save the selected currency to localStorage for persistence
+  useEffect(() => {
+    try {
+      localStorage.setItem('preferred_currency', selectedCurrency);
+    } catch (e) {
+      console.error("Error saving to localStorage:", e);
+    }
+  }, [selectedCurrency]);
+
+  // Initialize from localStorage when component mounts
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('preferred_currency');
+      if (saved) {
+        setSelectedCurrency(saved);
+      }
+    } catch (e) {
+      console.error("Error reading from localStorage:", e);
+    }
+  }, []);
 
   // Get current currency details
   const getCurrentCurrency = (): Currency => {

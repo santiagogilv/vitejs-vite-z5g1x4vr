@@ -1,5 +1,4 @@
 
-// This is an update for Navbar.tsx to add authentication-related links
 import React from "react";
 import { Link, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
@@ -7,16 +6,12 @@ import ThemeToggle from "@/components/ui/ThemeToggle";
 import { PlusCircle, Receipt, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/context/AuthContext";
+import { useMobile } from "@/hooks/use-mobile";
 
-interface NavbarProps {
-  isMobile: boolean;
-  isExpanded: boolean;
-  toggleNav: () => void;
-}
-
-const Navbar: React.FC<NavbarProps> = ({ isMobile, isExpanded, toggleNav }) => {
+const Navbar = () => {
   const { pathname } = useLocation();
   const { user } = useAuth();
+  const { isMobile, isNavExpanded, toggleNav } = useMobile();
 
   const NavLink = ({
     to,
@@ -37,10 +32,10 @@ const Navbar: React.FC<NavbarProps> = ({ isMobile, isExpanded, toggleNav }) => {
             ? "bg-primary text-primary-foreground"
             : "hover:bg-muted"
         )}
-        onClick={() => isMobile && isExpanded && toggleNav()}
+        onClick={() => isMobile && isNavExpanded && toggleNav()}
       >
         {icon}
-        <span className={cn(isMobile ? "block" : isExpanded ? "block" : "hidden")}>
+        <span className={cn(isMobile ? "block" : isNavExpanded ? "block" : "hidden")}>
           {children}
         </span>
       </Link>
@@ -74,11 +69,11 @@ const Navbar: React.FC<NavbarProps> = ({ isMobile, isExpanded, toggleNav }) => {
           <Link 
             to="/auth" 
             className="w-full" 
-            onClick={() => isMobile && isExpanded && toggleNav()}
+            onClick={() => isMobile && isNavExpanded && toggleNav()}
           >
             <Button className="w-full justify-start">
               <User className="mr-2 h-4 w-4" />
-              <span className={cn(isMobile ? "block" : isExpanded ? "block" : "hidden")}>
+              <span className={cn(isMobile ? "block" : isNavExpanded ? "block" : "hidden")}>
                 Sign In
               </span>
             </Button>

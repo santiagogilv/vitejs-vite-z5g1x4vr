@@ -1,10 +1,9 @@
-
 import React, { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { CreditCard, Trash2, Copy, Bank, DollarSign } from "lucide-react";
+import { CreditCard, Trash2, Copy, Wallet, DollarSign } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 interface PaymentMethod {
@@ -113,7 +112,7 @@ const PaymentMethodsList = () => {
   const getMethodIcon = (type: string) => {
     switch (type) {
       case "bank":
-        return <Bank className="h-5 w-5" />;
+        return <Wallet className="h-5 w-5" />;
       case "paypal":
       case "venmo":
         return <DollarSign className="h-5 w-5" />;

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from "react";
 import { v4 as uuidv4 } from "uuid";
 import { Button } from "@/components/ui/button";
@@ -39,7 +38,6 @@ const BillCreator: React.FC = () => {
   const [payments, setPayments] = useState<{from: User, to: User, amount: number}[]>([]);
   const [showAuthPrompt, setShowAuthPrompt] = useState(false);
   
-  // Currency handling
   const { 
     currencies, 
     selectedCurrency, 
@@ -48,7 +46,6 @@ const BillCreator: React.FC = () => {
     getCurrentCurrency 
   } = useCurrency();
 
-  // Initialize with the current user if logged in
   useEffect(() => {
     if (user) {
       const currentUser: User = {
@@ -56,12 +53,10 @@ const BillCreator: React.FC = () => {
         name: user.email?.split('@')[0] || "You"
       };
       
-      // Only add current user if not already in the list
       if (!users.some(u => u.id === user.id)) {
         setUsers([currentUser]);
       }
     } else {
-      // If not logged in, add a default "You" user
       if (users.length === 0) {
         setUsers([{ id: uuidv4(), name: "You" }]);
       }
@@ -151,13 +146,11 @@ const BillCreator: React.FC = () => {
           const userExists = item.assignedUsers.some((user) => user.id === userId);
           
           if (userExists) {
-            // Remove user from item
             return {
               ...item,
               assignedUsers: item.assignedUsers.filter((user) => user.id !== userId),
             };
           } else {
-            // Add user to item
             const userToAdd = users.find((user) => user.id === userId);
             if (userToAdd) {
               return {
@@ -176,12 +169,10 @@ const BillCreator: React.FC = () => {
     setItems(
       items.map((item) => {
         if (item.id === itemId) {
-          if (!userId) {
-            // Remove paidBy
+          if (!userId || userId === "none") {
             const { paidBy, ...rest } = item;
             return rest;
           } else {
-            // Set paidBy
             const userToSet = users.find((user) => user.id === userId);
             if (userToSet) {
               return {
@@ -199,32 +190,25 @@ const BillCreator: React.FC = () => {
   const calculateBill = () => {
     setIsCalculating(true);
     
-    // Calculate what each person owes
     const userBalances: Record<string, number> = {};
     
-    // Initialize balances
     users.forEach(user => {
       userBalances[user.id] = 0;
     });
     
-    // Calculate what each person owes and who paid
     items.forEach(item => {
       const totalItemCost = item.price * item.quantity;
       
-      // If someone paid for this item, credit them
       if (item.paidBy) {
         userBalances[item.paidBy.id] += totalItemCost;
       }
       
-      // Debit the assigned users or everyone if none assigned
       if (item.assignedUsers.length === 0) {
-        // If no users assigned, split among all users
         const costPerPerson = totalItemCost / users.length;
         users.forEach(user => {
           userBalances[user.id] -= costPerPerson;
         });
       } else {
-        // Split among assigned users
         const costPerPerson = totalItemCost / item.assignedUsers.length;
         item.assignedUsers.forEach(user => {
           userBalances[user.id] -= costPerPerson;
@@ -232,7 +216,6 @@ const BillCreator: React.FC = () => {
       }
     });
     
-    // Calculate payments
     const sortedBalances = Object.entries(userBalances)
       .map(([userId, balance]) => ({
         user: users.find(u => u.id === userId)!,
@@ -242,14 +225,13 @@ const BillCreator: React.FC = () => {
     
     const payments: {from: User, to: User, amount: number}[] = [];
     
-    let i = 0; // users who owe money (negative balance)
-    let j = sortedBalances.length - 1; // users who are owed money (positive balance)
+    let i = 0;
+    let j = sortedBalances.length - 1;
     
     while (i < j) {
       const debtor = sortedBalances[i];
       const creditor = sortedBalances[j];
       
-      // Handle tiny floating point errors
       if (Math.abs(debtor.balance) < 0.01 || Math.abs(creditor.balance) < 0.01) {
         if (Math.abs(debtor.balance) < 0.01) i++;
         if (Math.abs(creditor.balance) < 0.01) j--;
@@ -264,11 +246,9 @@ const BillCreator: React.FC = () => {
         amount: parseFloat(paymentAmount.toFixed(2))
       });
       
-      // Update balances
       debtor.balance += paymentAmount;
       creditor.balance -= paymentAmount;
       
-      // Move indices if balances are close to zero
       if (Math.abs(debtor.balance) < 0.01) i++;
       if (Math.abs(creditor.balance) < 0.01) j--;
     }
@@ -290,7 +270,6 @@ const BillCreator: React.FC = () => {
     setIsSaving(true);
 
     try {
-      // Create the bill
       const { data: billData, error: billError } = await supabase
         .from('bills')
         .insert({
@@ -306,13 +285,12 @@ const BillCreator: React.FC = () => {
 
       const billId = billData.id;
 
-      // Add participants
       const participantsPromises = users.map(async (u) => {
         const { data, error } = await supabase
           .from('bill_participants')
           .insert({
             bill_id: billId,
-            user_id: u.id === user.id ? user.id : user.id, // Only the current user is a registered user
+            user_id: u.id === user.id ? user.id : user.id,
             name: u.name,
             is_registered: u.id === user.id
           })
@@ -325,9 +303,7 @@ const BillCreator: React.FC = () => {
 
       const participants = await Promise.all(participantsPromises);
 
-      // Add items and their assignments
       for (const item of items) {
-        // Insert bill item
         const { data: itemData, error: itemError } = await supabase
           .from('bill_items')
           .insert({
@@ -342,7 +318,6 @@ const BillCreator: React.FC = () => {
 
         if (itemError) throw itemError;
 
-        // Insert item assignments
         if (item.assignedUsers.length > 0) {
           const assignments = item.assignedUsers.map(assignedUser => {
             const participant = participants.find(p => p.id === assignedUser.id);
@@ -360,7 +335,6 @@ const BillCreator: React.FC = () => {
         }
       }
 
-      // Add payments if they exist
       if (payments.length > 0) {
         const paymentsToInsert = payments.map(payment => {
           const fromParticipant = participants.find(p => p.id === payment.from.id);
@@ -385,7 +359,6 @@ const BillCreator: React.FC = () => {
 
       toast.success("Bill saved successfully!");
       
-      // Reset the form after successful save
       setItems([]);
       setPayments([]);
       setIsCalculating(false);
@@ -679,7 +652,6 @@ const BillCreator: React.FC = () => {
         )}
       </AnimatePresence>
 
-      {/* Auth prompt dialog */}
       <Dialog open={showAuthPrompt} onOpenChange={setShowAuthPrompt}>
         <DialogContent>
           <DialogHeader>

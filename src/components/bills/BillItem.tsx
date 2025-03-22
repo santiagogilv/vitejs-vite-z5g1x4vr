@@ -1,4 +1,3 @@
-
 import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Trash2, ChevronRight, ChevronDown, Users, DollarSign } from "lucide-react";
@@ -211,7 +210,7 @@ const BillItem: React.FC<BillItemProps> = ({
                       <SelectValue placeholder="Who paid for this item?" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Not specified</SelectItem>
+                      <SelectItem value="none">Not specified</SelectItem>
                       {allUsers.map((user) => (
                         <SelectItem key={user.id} value={user.id}>
                           {user.name}

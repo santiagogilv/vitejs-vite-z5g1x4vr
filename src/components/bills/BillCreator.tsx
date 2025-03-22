@@ -1,7 +1,8 @@
+
 import React, { useState, useEffect } from "react";
 import { v4 as uuidv4 } from "uuid";
 import { Button } from "@/components/ui/button";
-import { PlusCircle, Users, Receipt, DollarSign, Calculator, Save, CreditCard } from "lucide-react";
+import { PlusCircle, Users, Receipt, DollarSign, Calculator, Save, CreditCard, Share2 } from "lucide-react";
 import BillItem, { User } from "./BillItem";
 import UserProfile from "./UserProfile";
 import { motion, AnimatePresence } from "framer-motion";
@@ -12,22 +13,21 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/context/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useBillStorage, BillData, BillItem as BillItemType } from "@/hooks/useBillStorage";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { shareBill } from "@/utils/shareUtils";
 
-interface BillItem {
-  id: string;
-  name: string;
-  price: number;
-  quantity: number;
-  assignedUsers: User[];
-  paidBy?: User;
+interface BillCreatorProps {
+  initialBillId?: string;
 }
 
-const BillCreator: React.FC = () => {
+const BillCreator: React.FC<BillCreatorProps> = ({ initialBillId }) => {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const [title, setTitle] = useState("Dinner");
   const [users, setUsers] = useState<User[]>([]);
-  const [items, setItems] = useState<BillItem[]>([]);
+  const [items, setItems] = useState<BillItemType[]>([]);
   const [newItemName, setNewItemName] = useState("");
   const [newItemPrice, setNewItemPrice] = useState("");
   const [newItemQuantity, setNewItemQuantity] = useState("1");
@@ -37,15 +37,21 @@ const BillCreator: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [payments, setPayments] = useState<{from: User, to: User, amount: number}[]>([]);
   const [showAuthPrompt, setShowAuthPrompt] = useState(false);
+  const [loadedBillId, setLoadedBillId] = useState<string | null>(null);
+  const [showShareDialog, setShowShareDialog] = useState(false);
   
   const { 
     currencies, 
     selectedCurrency, 
     setSelectedCurrency, 
     formatAmount, 
-    getCurrentCurrency 
+    getCurrentCurrency,
+    loading: currencyLoading 
   } = useCurrency();
 
+  const { saveBill, updateBill, getBill, isLoaded: storageIsLoaded } = useBillStorage();
+
+  // Initialize with user data if logged in
   useEffect(() => {
     if (user) {
       const currentUser: User = {
@@ -62,6 +68,53 @@ const BillCreator: React.FC = () => {
       }
     }
   }, [user]);
+
+  // Load bill if initialBillId is provided
+  useEffect(() => {
+    if (initialBillId && storageIsLoaded) {
+      const savedBill = getBill(initialBillId);
+      if (savedBill) {
+        setTitle(savedBill.title);
+        setItems(savedBill.items);
+        setUsers(savedBill.users);
+        setSelectedCurrency(savedBill.currency);
+        setPayments(savedBill.payments || []);
+        setLoadedBillId(initialBillId);
+      }
+    }
+  }, [initialBillId, storageIsLoaded, getBill]);
+
+  // Auto-save functionality
+  useEffect(() => {
+    // Don't save if we're still loading or there are no items
+    if (!storageIsLoaded || items.length === 0) return;
+
+    const autosaveBill = () => {
+      const billData = {
+        title,
+        items,
+        users,
+        currency: selectedCurrency,
+        totalAmount,
+        payments
+      };
+
+      if (loadedBillId) {
+        updateBill(loadedBillId, billData);
+      } else {
+        const newBillId = saveBill(billData);
+        setLoadedBillId(newBillId);
+        console.log("Auto-saved bill with ID:", newBillId);
+      }
+    };
+
+    // Debounced auto-save
+    const timer = setTimeout(() => {
+      autosaveBill();
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [title, items, users, selectedCurrency, payments, storageIsLoaded]);
 
   const handleAddItem = (e: React.FormEvent) => {
     e.preventDefault();
@@ -83,7 +136,7 @@ const BillCreator: React.FC = () => {
       return;
     }
 
-    const newItem: BillItem = {
+    const newItem: BillItemType = {
       id: uuidv4(),
       name: newItemName,
       price,
@@ -254,6 +307,24 @@ const BillCreator: React.FC = () => {
     }
     
     setPayments(payments);
+
+    // Auto-save when calculating
+    const billData = {
+      title,
+      items,
+      users,
+      currency: selectedCurrency,
+      totalAmount,
+      payments
+    };
+
+    if (loadedBillId) {
+      updateBill(loadedBillId, billData);
+    } else {
+      const newBillId = saveBill(billData);
+      setLoadedBillId(newBillId);
+      toast.success("Bill automatically saved");
+    }
   };
 
   const handleSaveBill = async () => {
@@ -362,6 +433,7 @@ const BillCreator: React.FC = () => {
       setItems([]);
       setPayments([]);
       setIsCalculating(false);
+      setLoadedBillId(null);
       
     } catch (error: any) {
       console.error("Error saving bill:", error);
@@ -369,6 +441,39 @@ const BillCreator: React.FC = () => {
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleShareBill = async () => {
+    if (items.length === 0) {
+      toast.error("Please add at least one item to share");
+      return;
+    }
+
+    // Ensure we have payments calculated
+    if (payments.length === 0) {
+      calculateBill();
+    }
+
+    const billData: BillData = {
+      id: loadedBillId || uuidv4(),
+      title,
+      items,
+      users,
+      currency: selectedCurrency,
+      totalAmount,
+      payments,
+      updatedAt: new Date().toISOString()
+    };
+
+    const success = await shareBill(billData);
+    
+    if (success) {
+      toast.success("Bill details copied and ready to share!");
+    } else {
+      toast.error("Couldn't share bill. The details have been copied to your clipboard instead.");
+    }
+    
+    setShowShareDialog(false);
   };
 
   const totalAmount = items.reduce(
@@ -409,9 +514,10 @@ const BillCreator: React.FC = () => {
               <Select 
                 value={selectedCurrency} 
                 onValueChange={setSelectedCurrency}
+                disabled={currencyLoading}
               >
                 <SelectTrigger id="currency" className="w-full">
-                  <SelectValue placeholder="Select currency" />
+                  <SelectValue placeholder={currencyLoading ? "Loading currencies..." : "Select currency"} />
                 </SelectTrigger>
                 <SelectContent>
                   {currencies.map(currency => (
@@ -583,6 +689,17 @@ const BillCreator: React.FC = () => {
           <Save className="w-5 h-5 mr-2" />
           Save Bill
         </Button>
+        
+        <Button 
+          size="lg" 
+          variant="secondary"
+          className="shadow-lg"
+          disabled={items.length === 0}
+          onClick={handleShareBill}
+        >
+          <Share2 className="w-5 h-5 mr-2" />
+          {isMobile ? "" : "Share"}
+        </Button>
       </div>
 
       <AnimatePresence>
@@ -639,7 +756,15 @@ const BillCreator: React.FC = () => {
                 </div>
               )}
 
-              <div className="text-center">
+              <div className="text-center space-x-3">
+                <Button 
+                  variant="secondary" 
+                  onClick={handleShareBill}
+                  className="mr-2"
+                >
+                  <Share2 className="w-4 h-4 mr-2" />
+                  Share Summary
+                </Button>
                 <Button 
                   variant="outline" 
                   onClick={() => setIsCalculating(false)}

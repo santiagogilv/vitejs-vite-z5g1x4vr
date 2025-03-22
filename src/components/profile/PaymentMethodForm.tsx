@@ -134,6 +134,15 @@ const PaymentMethodForm = () => {
         </div>
       )}
       
+      {/* Added a description for cash payment type */}
+      {type === "cash" && (
+        <div className="p-4 bg-muted rounded-md">
+          <p className="text-sm text-muted-foreground">
+            Cash payment will be recorded as an available payment method. No additional details needed.
+          </p>
+        </div>
+      )}
+      
       <div className="flex items-center space-x-2">
         <Switch
           id="is-default"

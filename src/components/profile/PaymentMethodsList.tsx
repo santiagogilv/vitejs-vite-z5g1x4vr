@@ -1,19 +1,35 @@
+
 import React, { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { 
+  Card, 
+  CardContent, 
+  CardDescription, 
+  CardHeader, 
+  CardTitle 
+} from "@/components/ui/card";
+import { 
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
-import { CreditCard, Trash2, Copy, Wallet, DollarSign } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { toast } from "sonner";
+import { Wallet, CreditCard, Paypal, DollarSign, MoreVertical, Trash2, Star } from "lucide-react";
 
 interface PaymentMethod {
   id: string;
   type: string;
-  account_number?: string;
-  bank_name?: string;
-  rut?: string;
-  email?: string;
+  bank_name: string | null;
+  account_number: string | null;
+  rut: string | null;
+  email: string | null;
   is_default: boolean;
+  created_at: string;
 }
 
 const PaymentMethodsList = () => {
@@ -22,16 +38,17 @@ const PaymentMethodsList = () => {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    if (!user) return;
+    
     const fetchPaymentMethods = async () => {
-      if (!user) return;
-
       try {
         const { data, error } = await supabase
           .from('payment_methods')
           .select('*')
           .eq('user_id', user.id)
-          .order('is_default', { ascending: false });
-
+          .order('is_default', { ascending: false })
+          .order('created_at', { ascending: false });
+          
         if (error) throw error;
         setPaymentMethods(data || []);
       } catch (error: any) {
@@ -41,51 +58,38 @@ const PaymentMethodsList = () => {
         setIsLoading(false);
       }
     };
-
+    
     fetchPaymentMethods();
   }, [user]);
 
-  const handleDelete = async (id: string) => {
-    try {
-      const { error } = await supabase
-        .from('payment_methods')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
-
-      setPaymentMethods(paymentMethods.filter(method => method.id !== id));
-      toast.success("Payment method deleted");
-    } catch (error: any) {
-      console.error("Error deleting payment method:", error.message);
-      toast.error("Failed to delete payment method");
-    }
-  };
-
   const handleSetDefault = async (id: string) => {
+    if (!user) return;
+    
     try {
-      // First, set all to not default
+      // First, set all payment methods to not be default
       const { error: updateError } = await supabase
         .from('payment_methods')
         .update({ is_default: false })
-        .eq('user_id', user!.id);
-
+        .eq('user_id', user.id);
+        
       if (updateError) throw updateError;
-
+      
       // Then set the selected one as default
       const { error } = await supabase
         .from('payment_methods')
         .update({ is_default: true })
         .eq('id', id);
-
+        
       if (error) throw error;
-
+      
       // Update local state
-      setPaymentMethods(paymentMethods.map(method => ({
-        ...method,
-        is_default: method.id === id
-      })));
-
+      setPaymentMethods(prev => 
+        prev.map(method => ({
+          ...method,
+          is_default: method.id === id
+        }))
+      );
+      
       toast.success("Default payment method updated");
     } catch (error: any) {
       console.error("Error updating default payment method:", error.message);
@@ -93,33 +97,73 @@ const PaymentMethodsList = () => {
     }
   };
 
-  const handleCopyToClipboard = (method: PaymentMethod) => {
-    let textToCopy = "";
+  const handleDelete = async (id: string) => {
+    if (!user) return;
     
-    if (method.type === "bank") {
-      textToCopy = `Bank: ${method.bank_name}\nAccount: ${method.account_number}`;
-      if (method.rut) textToCopy += `\nRUT: ${method.rut}`;
-    } else if (method.type === "paypal" || method.type === "venmo") {
-      textToCopy = `${method.type.charAt(0).toUpperCase() + method.type.slice(1)}: ${method.email}`;
-    } else if (method.type === "cash") {
-      textToCopy = "Cash payment";
+    try {
+      const { error } = await supabase
+        .from('payment_methods')
+        .delete()
+        .eq('id', id);
+        
+      if (error) throw error;
+      
+      // Update local state
+      setPaymentMethods(prev => prev.filter(method => method.id !== id));
+      toast.success("Payment method deleted");
+    } catch (error: any) {
+      console.error("Error deleting payment method:", error.message);
+      toast.error("Failed to delete payment method");
     }
-    
-    navigator.clipboard.writeText(textToCopy);
-    toast.success("Payment details copied to clipboard");
   };
 
-  const getMethodIcon = (type: string) => {
+  const getPaymentMethodIcon = (type: string) => {
     switch (type) {
-      case "bank":
-        return <Wallet className="h-5 w-5" />;
-      case "paypal":
-      case "venmo":
-        return <DollarSign className="h-5 w-5" />;
-      case "cash":
-        return <CreditCard className="h-5 w-5" />;
+      case 'bank':
+        return <Wallet className="h-10 w-10 text-primary p-2 bg-primary/10 rounded-full" />;
+      case 'paypal':
+        return <Paypal className="h-10 w-10 text-primary p-2 bg-primary/10 rounded-full" />;
+      case 'venmo':
+        return <CreditCard className="h-10 w-10 text-primary p-2 bg-primary/10 rounded-full" />;
+      case 'cash':
+        return <DollarSign className="h-10 w-10 text-primary p-2 bg-primary/10 rounded-full" />;
       default:
-        return <CreditCard className="h-5 w-5" />;
+        return <CreditCard className="h-10 w-10 text-primary p-2 bg-primary/10 rounded-full" />;
+    }
+  };
+
+  const getPaymentMethodDetails = (method: PaymentMethod) => {
+    switch (method.type) {
+      case 'bank':
+        return (
+          <div>
+            <p className="font-medium">{method.bank_name}</p>
+            <p className="text-sm text-muted-foreground">
+              {method.account_number ? `Account: ${method.account_number}` : "No account number"}
+            </p>
+          </div>
+        );
+      case 'paypal':
+      case 'venmo':
+        return (
+          <div>
+            <p className="font-medium">{method.type.charAt(0).toUpperCase() + method.type.slice(1)}</p>
+            <p className="text-sm text-muted-foreground">{method.email}</p>
+          </div>
+        );
+      case 'cash':
+        return (
+          <div>
+            <p className="font-medium">Cash</p>
+            <p className="text-sm text-muted-foreground">In-person payment</p>
+          </div>
+        );
+      default:
+        return (
+          <div>
+            <p className="font-medium">Unknown payment type</p>
+          </div>
+        );
     }
   };
 
@@ -131,7 +175,8 @@ const PaymentMethodsList = () => {
     return (
       <div className="text-center py-8 text-muted-foreground">
         <CreditCard className="w-12 h-12 mx-auto mb-3 opacity-30" />
-        <p>You haven't added any payment methods yet.</p>
+        <p>You don't have any payment methods yet.</p>
+        <p className="text-sm">Add one below to get started.</p>
       </div>
     );
   }
@@ -139,58 +184,44 @@ const PaymentMethodsList = () => {
   return (
     <div className="space-y-4">
       {paymentMethods.map((method) => (
-        <div 
-          key={method.id}
-          className={`p-4 rounded-lg border flex items-center justify-between ${
-            method.is_default ? "border-primary bg-primary/5" : "border-border"
-          }`}
-        >
-          <div className="flex items-center space-x-3">
-            {getMethodIcon(method.type)}
-            <div>
-              <div className="font-medium flex items-center">
-                {method.type.charAt(0).toUpperCase() + method.type.slice(1)}
-                {method.is_default && (
-                  <Badge variant="outline" className="ml-2 bg-primary/10">Default</Badge>
-                )}
+        <Card key={method.id} className={method.is_default ? "border-primary" : ""}>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-4">
+                {getPaymentMethodIcon(method.type)}
+                {getPaymentMethodDetails(method)}
               </div>
-              <div className="text-sm text-muted-foreground">
-                {method.type === "bank" && `${method.bank_name} • ${method.account_number?.slice(-4)}`}
-                {(method.type === "paypal" || method.type === "venmo") && method.email}
-                {method.type === "cash" && "In-person payment"}
+              
+              <div className="flex items-center">
+                {method.is_default && (
+                  <div className="mr-2 flex items-center text-xs bg-primary/10 text-primary px-2 py-1 rounded-full">
+                    <Star className="h-3 w-3 mr-1" /> Default
+                  </div>
+                )}
+                
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon">
+                      <MoreVertical className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    {!method.is_default && (
+                      <DropdownMenuItem onClick={() => handleSetDefault(method.id)}>
+                        <Star className="h-4 w-4 mr-2" /> Set as Default
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem onClick={() => handleDelete(method.id)}>
+                      <Trash2 className="h-4 w-4 mr-2" /> Delete
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </div>
-          </div>
-          <div className="flex space-x-2">
-            <Button 
-              variant="ghost" 
-              size="sm"
-              onClick={() => handleCopyToClipboard(method)}
-              title="Copy details"
-            >
-              <Copy className="h-4 w-4" />
-            </Button>
-            {!method.is_default && (
-              <Button 
-                variant="ghost" 
-                size="sm"
-                onClick={() => handleSetDefault(method.id)}
-                title="Make default"
-              >
-                Set Default
-              </Button>
-            )}
-            <Button 
-              variant="ghost" 
-              size="sm"
-              onClick={() => handleDelete(method.id)}
-              className="text-destructive hover:text-destructive"
-              title="Delete"
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       ))}
     </div>
   );

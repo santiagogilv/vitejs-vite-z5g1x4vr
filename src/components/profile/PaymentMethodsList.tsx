@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -19,7 +18,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { Wallet, CreditCard, Paypal, DollarSign, MoreVertical, Trash2, Star } from "lucide-react";
+import { Wallet, CreditCard, DollarSign, MoreVertical, Trash2, Star } from "lucide-react";
 
 interface PaymentMethod {
   id: string;
@@ -122,7 +121,7 @@ const PaymentMethodsList = () => {
       case 'bank':
         return <Wallet className="h-10 w-10 text-primary p-2 bg-primary/10 rounded-full" />;
       case 'paypal':
-        return <Paypal className="h-10 w-10 text-primary p-2 bg-primary/10 rounded-full" />;
+        return <DollarSign className="h-10 w-10 text-primary p-2 bg-primary/10 rounded-full" />;
       case 'venmo':
         return <CreditCard className="h-10 w-10 text-primary p-2 bg-primary/10 rounded-full" />;
       case 'cash':
